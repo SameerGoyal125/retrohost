@@ -1,0 +1,14 @@
+# Secrets — never commit
+.env
+*.key
+*.pem
+
+# Dependencies
+node_modules/
+
+# Agent/orchestration state — not project code
+.omo/
+.codegraph/
+
+# ponytail: TrueForge local SQLite DB — add the actual path here if it ever
+# falls under this repo (e.g. trueforge/data/*.db or *.sqlite3)
