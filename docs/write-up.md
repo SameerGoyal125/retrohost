@@ -71,6 +71,27 @@ The full flow was run live on TrueForge against the seeded fixtures:
   it created **GitHub issue #1** on the repo — the control-and-safety gate
   working end-to-end on a real write.
 
+### Real-paper validation
+
+Beyond the synthetic fixtures, Retrohost was run against a **real published
+paper** — *"Get in Researchers; We're Measuring Reproducibility"* (a
+reproducibility study of ML papers in security conferences,
+`reproducibility-sec/reproducibility`). The agent:
+
+- Extracted the author-run figure images (Figures 2–9) from the paper's Jupyter
+  notebook, since the repo ships no pre-made PDFs.
+- Handled real heterogeneity: the repo pins 2021-era dependencies (numpy 1.19.5,
+  pandas 1.2.0) that can't install on Python 3.13, so it used the modern stack
+  and noted the caveat honestly.
+- Spawned **8 parallel subagents** (one per figure), each running `figure.py` in
+  the sandbox and classifying with code-computed evidence (aspect ratio,
+  pixel-MAD, color-palette diffs).
+- Produced the final report: **6 REPRODUCED** (Figs 3, 4, 6, 7, 8, 9), **2
+  PARTIAL** (Figs 2, 5), **0 FAILED**.
+- When the GitHub MCP backend was transiently down, it **honestly saved the
+  ready-to-post issue rather than fabricating success** — exactly the
+  "never fabricate a result" rule.
+
 ## Repo layout
 
 - `agent.json` — the TrueForge agent definition.

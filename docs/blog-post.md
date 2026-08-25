@@ -73,5 +73,17 @@ whether to post, then **paused for my approval** before calling `create_issue` â
 and on approval it created **GitHub issue #1** on the repo. The control-and-safety
 gate worked end-to-end on a real write.
 
+## Then I pointed it at a real paper
+
+To prove it wasn't just the synthetic fixtures, I ran Retrohost against a **real
+published paper** â€” *"Get in Researchers; We're Measuring Reproducibility"*, a
+reproducibility study of ML papers in security conferences. The agent extracted
+the author-run figures from the paper's notebook, handled the fact that the repo
+pins 2021-era dependencies that can't install on modern Python, spawned **8
+parallel subagents** (one per figure), and classified each with code-computed
+evidence. Final report: **6 REPRODUCED, 2 PARTIAL, 0 FAILED**. When the GitHub
+backend was briefly down, it honestly saved the ready-to-post issue rather than
+faking success.
+
 *Retrohost reproduces Python-based paper code. R / notebook / shell papers
 classify as FAILED with the reason recorded.*
