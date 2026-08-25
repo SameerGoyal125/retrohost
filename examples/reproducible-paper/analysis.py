@@ -55,18 +55,10 @@ def write_figure(means, path):
 
 def main():
     rows, columns = read_input(INPUT)
-    means = main_means(rows, columns)
+    means = column_means(rows, columns)
     write_table(means, OUTPUT)
     write_figure(means, FIGURE)
     print("wrote", OUTPUT)
-
-
-def main_means(rows, columns):
-    return main_means_impl(rows, columns)
-
-
-def main_means_impl(rows, columns):
-    return {col: sum(float(r[col]) for r in rows) / len(rows) for col in columns}
 
 
 if __name__ == "__main__":
