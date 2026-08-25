@@ -52,6 +52,24 @@ R`). It does not reproduce papers without public code or data.
 - The "irreversible" framing had to be honest: a GitHub issue can be deleted, so
   the stakes are "public + attributed + reputationally consequential," not
   "undeletable."
+- The Ox Alpha model on the Zen endpoint failed on tool calls (a documented
+  upstream bug), so we switched to `stealth/ox-alpha` on the Nous Research
+  endpoint, which handles tools correctly.
+
+## Validated end-to-end
+
+The full flow was run live on TrueForge against the seeded fixtures:
+
+- `examples/reproducible-paper` → **REPRODUCED** (3/3 rows match within
+  `rtol=1e-4, atol=1e-6`).
+- `examples/divergent-paper` → **FAILED** — the agent produced a side-by-side
+  diff (claimed 51/57/63 vs reproduced 8.5/9.5/10.5), diagnosed the stale
+  claimed artifact, computed aggregate counts in Python, and rendered a
+  Generative UI scorecard.
+- The agent asked a clarifying question ("post as a public issue, or hold?"),
+  then **paused for human approval** before calling `create_issue`. On approval,
+  it created **GitHub issue #1** on the repo — the control-and-safety gate
+  working end-to-end on a real write.
 
 ## Repo layout
 

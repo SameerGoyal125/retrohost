@@ -64,5 +64,14 @@ shows the scorecard with the divergent figure's diff, asks whether to post, and
 pauses for my approval before creating the public issue. Then I refresh the
 browser and the session is still there.
 
+## It actually worked
+
+I ran the full flow live on TrueForge. The agent classified the reproducible
+fixture as **REPRODUCED** and the divergent one as **FAILED** (with a side-by-side
+diff and a correct root-cause diagnosis of the stale claimed artifact). It asked
+whether to post, then **paused for my approval** before calling `create_issue` —
+and on approval it created **GitHub issue #1** on the repo. The control-and-safety
+gate worked end-to-end on a real write.
+
 *Retrohost reproduces Python-based paper code. R / notebook / shell papers
 classify as FAILED with the reason recorded.*
