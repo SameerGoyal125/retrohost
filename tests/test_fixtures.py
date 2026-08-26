@@ -86,9 +86,12 @@ class TestReproduciblePaper:
 
     def test_reproduces_claimed(self, reproducible_result):
         claimed = _load_claimed(REPRODUCIBLE_DIR)
-        assert reproducible_result == claimed, (
-            f"Analysis output {reproducible_result} does not match claimed {claimed}"
-        )
+        for metric in claimed:
+            actual = reproducible_result[metric]
+            exp = claimed[metric]
+            assert within_tolerance(actual, exp), (
+                f"{metric}: actual {actual} not within tolerance of claimed {exp}"
+            )
 
     def test_exact_expected_values(self, reproducible_result):
         for metric, expected in self.EXPECTED_VALUES.items():
@@ -114,8 +117,15 @@ class TestDivergentPaper:
 
     def test_diverges_from_claimed(self, divergent_result):
         claimed = _load_claimed(DIVERGENT_DIR)
-        assert divergent_result != claimed, (
-            "Divergent paper's analysis unexpectedly matched stale claimed.csv"
+        any_outside = False
+        for metric in claimed:
+            actual = divergent_result[metric]
+            exp = claimed[metric]
+            if not within_tolerance(actual, exp):
+                any_outside = True
+                break
+        assert any_outside, (
+            f"All metrics within tolerance of claimed {claimed} — expected divergence"
         )
 
     def test_stale_values_not_reproduced(self, divergent_result):
@@ -172,6 +182,40 @@ class TestTolerancePolicy:
         assert within_tolerance(reproduced, claimed)
         # A stale sum should never be within tolerance of the correct mean
         assert not within_tolerance(51.0, 8.5)
+
+
+# ---------------------------------------------------------------------------
+# Classification helper (connects tolerance policy to REPRODUCED / DIVERGES)
+# ---------------------------------------------------------------------------
+
+def classify(actual: dict[str, float], claimed: dict[str, float],
+             rtol: float = 1e-4, atol: float = 1e-6) -> str:
+    """Classify *actual* against *claimed* using the declared tolerance policy.
+
+    Returns REPRODUCED if every metric is within tolerance, DIVERGES otherwise.
+    """
+    for metric in claimed:
+        if not within_tolerance(actual[metric], claimed[metric], rtol=rtol, atol=atol):
+            return "DIVERGES"
+    return "REPRODUCED"
+
+
+class TestClassificationPolicy:
+    """Prove the tolerance policy is CONNECTED to fixture classification."""
+
+    def test_within_tolerance_classifies_reproduced(self):
+        """A value within rtol of claimed must classify as REPRODUCED."""
+        claimed = {"mean_x": 8.5, "mean_y": 9.5, "mean_z": 10.5}
+        # 5e-5 relative offset: 8.5 * (1 + 5e-5) = 8.500425 — within rtol=1e-4
+        actual = {k: v * (1 + 5e-5) for k, v in claimed.items()}
+        assert classify(actual, claimed) == "REPRODUCED"
+
+    def test_outside_tolerance_classifies_diverges(self):
+        """A value outside rtol of claimed must classify as DIVERGES."""
+        claimed = {"mean_x": 8.5, "mean_y": 9.5, "mean_z": 10.5}
+        # 2e-4 relative offset: 8.5 * (1 + 2e-4) = 8.5017 — outside rtol=1e-4
+        actual = {k: v * (1 + 2e-4) for k, v in claimed.items()}
+        assert classify(actual, claimed) == "DIVERGES"
 
 
 class TestInputData:
