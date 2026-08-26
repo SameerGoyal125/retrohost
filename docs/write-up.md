@@ -118,3 +118,28 @@ findings were addressed before merge. No review trail was fabricated.
 6 PRs merged, 7 Qodo findings, all addressed with follow-up commits and
 re-reviewed clean. The trail is visible at
 https://github.com/SameerGoyal125/retrohost/pulls.
+
+## How Retrohost uses the harness
+
+Every capability the TrueForge track names is load-bearing here, not decorative:
+
+- **Real tools through MCP** — the GitHub MCP connector reads each paper's
+  public repo (issues, files, notebooks). In the validated run it ingested
+  `reproducibility-sec/reproducibility` end to end.
+- **Generated code in a sandbox** — untrusted paper code never touches the
+  host: each figure's script runs isolated in a Daytona sandbox. Classifications
+  are computed in code (aspect ratio, pixel-MAD, color-palette diff), not guessed.
+- **Human approval before irreversible actions** — posting the reproduction
+  report is a public, attributed claim. The harness pauses on `create_issue`
+  with Allow/Deny; nothing goes out without a person clicking Allow.
+- **Work handed to subagents** — one subagent per figure, fanned out in
+  parallel (visible as `thread.created` events): 8 subagents covered Figures
+  2–9 of the real paper simultaneously.
+- **Sessions that hold together across reconnects** — the full review session
+  (conversation, scorecard, pending approvals) persists server-side and was
+  re-fetched intact a day later, across many disconnects.
+
+Net effect: Retrohost is not a wrapper around a model prompt. Nine harness
+features do load-bearing work: MCP tools, sandbox execution, Code Mode,
+subagent fan-out, Generative UI scorecards, clarifying questions, the
+approval gate, the reproduction-review skill, and session persistence.
