@@ -457,7 +457,11 @@
     border-bottom: 1px solid var(--line);
   }
 
-  #history-list { list-style: none; max-height: 300px; overflow-y: auto; }
+  #history-list { list-style: none; max-height: 300px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(201,162,39,.35) transparent; }
+  #history-list::-webkit-scrollbar { width: 6px; }
+  #history-list::-webkit-scrollbar-track { background: transparent; }
+  #history-list::-webkit-scrollbar-thumb { background: rgba(201,162,39,.35); border-radius: 999px; }
+  #history-list::-webkit-scrollbar-thumb:hover { background: rgba(201,162,39,.55); }
   #history-list li {
     padding: 12px 20px;
     border-bottom: 1px solid var(--line);
@@ -518,7 +522,6 @@
 </style>
 </head>
 <body>
-<div class="wrap">
 
   <div class="topbar">
     <div class="topbar-inner">
@@ -532,6 +535,8 @@
       <span class="live-pill"><span class="dot-live" id="api-dot" title="TrueForge API status"></span> TrueForge</span>
     </div>
   </div>
+
+<div class="wrap">
 
   <section class="hero">
     <div class="hero-copy">
@@ -844,11 +849,19 @@
     var sawSubagents = false;
     var finalVerdict = null;   /* { label, counts } from the last scorecard */
     var lastScorecard = null;  /* last model message that looks like a final summary */
+    var turnStatus = null;     /* "completed" | "error" | null (still running) */
+    var turnError = null;      /* message from a failed turn */
 
     events.forEach(function (entry) {
       var ev = (entry && entry.event) || entry || {};
       var text = evText(ev);
       var tcs = ev.tool_calls || [];
+
+      /* track turn lifecycle: a failed turn must be surfaced, not silently ignored */
+      if (ev.type === "turn.done" && ev.state) {
+        turnStatus = ev.state.status || "completed";
+        if (turnStatus === "error") turnError = ev.state.message || "The turn failed.";
+      }
 
       /* tool calls → evidence (both inline tool_calls and standalone tool.call/tool.response events) */
       var toolEvents = [];
@@ -880,20 +893,27 @@
       }
 
       /* final verdict: the LAST model message containing a scorecard/aggregate summary */
-      if (ev.type === "model" || ev.type === "message") {
+      if (text && ev.type !== "tool.call" && ev.type !== "tool.response") {
         var up = text.toUpperCase();
+        var clean = text.trim();
         var hasRep = /\bREPRODUCED\b/.test(up);
         var hasPar = /\bPARTIAL\b/.test(up);
         var hasFai = /\bFAILED\b/.test(up);
-        if (hasRep && (hasPar || hasFai)) {
+        if (hasRep || hasPar || hasFai) {
           /* looks like a scorecard — pull the count next to each label */
           var counts = { REPRODUCED: 0, PARTIAL: 0, FAILED: 0 };
           ["REPRODUCED", "PARTIAL", "FAILED"].forEach(function (l) {
             var m = up.match(new RegExp("(\\d+)\\s+" + l + "\\b")) ||
                     up.match(new RegExp(l + "\\b[^\\d]{0,6}(\\d+)"));
             if (m) counts[l] = parseInt(m[1], 10);
+            else {
+              /* fallback: count label occurrences, excluding negated ones ("not REPRODUCED") */
+              var stripped = up.replace(new RegExp("\\bNOT[\\s-]+" + l + "\\b", "gi"), "");
+              counts[l] = (stripped.match(new RegExp("\\b" + l + "\\b", "g")) || []).length;
+            }
           });
-          lastScorecard = { counts: counts, text: clean };
+          /* events are newest-first, so the FIRST scorecard match is the newest — keep it */
+          if (!lastScorecard) lastScorecard = { counts: counts, text: clean };
         }
       }
     });
@@ -921,7 +941,8 @@
         d.className = "ev-item";
         var t = document.createElement("span");
         t.className = "ev-tool";
-        t.textContent = "🔍 " + e.tool;
+        t.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="vertical-align:-1px;margin-right:5px"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>';
+        t.appendChild(document.createTextNode(e.tool));
         d.appendChild(t);
         if (e.args) {
           var a = document.createElement("div");
@@ -960,7 +981,10 @@
     box.className = "verdict-box";
 
     var stamp = document.createElement("div");
-    if (!finalVerdict) {
+    if (turnError) {
+      stamp.className = "verdict-stamp none";
+      stamp.textContent = "Turn failed";
+    } else if (!finalVerdict) {
       stamp.className = "verdict-stamp none";
       stamp.textContent = sawSubagents ? "In progress" : "No verdict yet";
     } else {
@@ -969,7 +993,12 @@
     }
     box.appendChild(stamp);
 
-    if (finalVerdict) {
+    if (turnError) {
+      var err = document.createElement("p");
+      err.className = "verdict-note";
+      err.textContent = "The investigation couldn't complete: " + turnError;
+      box.appendChild(err);
+    } else if (finalVerdict) {
       var counts = document.createElement("div");
       counts.className = "verdict-counts";
       [["REPRODUCED", "ok", finalVerdict.counts.REPRODUCED],
@@ -991,10 +1020,12 @@
     vb.appendChild(box);
 
     /* ---- mascot state ---- */
-    if (finalVerdict) setState("verdict");
+    if (turnError) setState("idle");
+    else if (finalVerdict) setState("verdict");
     else if (sawSubagents) setState("investigating");
     else if (evidence.length || deductions.length) setState("evidence");
-    else setState("idle");
+    else if (turnStatus === "completed") setState("idle");
+    else setState("investigating"); /* case open, turn still running — don't flip to idle */
   }
 
   /* ---------- new case ---------- */
@@ -1002,17 +1033,50 @@
     var q = $("repo-input").value.trim();
     if (!q) { $("repo-input").focus(); return; }
 
-    /* We can only read sessions — find one whose title mentions this repo. */
-    var match = sessions.find(function (s) {
-      return s.title && s.title.toLowerCase().indexOf(q.toLowerCase()) !== -1;
-    });
-    if (match) {
-      openSession(match.id);
-      return;
-    }
-    showBanner("No case file found for <b>" + escapeHtml(q) + "</b> yet. " +
-      "Start a chat with the <b>retrohost</b> agent in TrueForge and ask it to reproduce this repo — the case will appear here.");
-    setState("idle");
+    setState("investigating");
+    showBanner("Opening a new case file for <b>" + escapeHtml(q) + "</b>…");
+
+    /* always start a fresh investigation: create a session, then kick off a turn */
+    fetch(API + "/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agent: { name: "retrohost" } })
+    })
+      .then(function (res) {
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+      })
+      .then(function (data) {
+        var id = (data && data.data && data.data.id) || (data && data.id);
+        if (!id) throw new Error("no session id returned");
+        hideBanner();
+        openSession(id);
+        loadSessions();
+        /* start the turn — drain the SSE stream in the background so it runs to completion */
+        fetch(API + "/sessions/" + encodeURIComponent(id) + "/turns", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ input: [{ type: "user.message", content: q }] })
+        })
+          .then(function (res) {
+            if (!res.ok) throw new Error("HTTP " + res.status);
+            if (!res.body || !res.body.getReader) return;
+            var reader = res.body.getReader();
+            function pump() {
+              return reader.read().then(function (r) { return r.done ? null : pump(); });
+            }
+            return pump();
+          })
+          .catch(function (err) {
+            showBanner("The investigation couldn't start: <b>" + escapeHtml(String(err.message || err)) + "</b>. " +
+              "The case file is open — check the model provider (rate limits?) and try again.");
+          });
+      })
+      .catch(function (err) {
+        setState("idle");
+        showBanner("Couldn't open a new case: <b>" + escapeHtml(String(err.message || err)) + "</b>. " +
+          "Is the TrueForge server running?");
+      });
   }
 
   function escapeHtml(s) {
@@ -1031,6 +1095,16 @@
   loadSessions();
   /* poll for new sessions every 15s */
   setInterval(loadSessions, 15000);
+  /* live-update the open case: re-fetch its events every 5s while one is open */
+  setInterval(function () {
+    if (!currentId) return;
+    fetchAllEvents(currentId)
+      .then(function (events) {
+        if (!currentId) return;
+        renderCase(events);
+      })
+      .catch(function () { /* transient — the next tick will retry */ });
+  }, 5000);
 })();
 </script>
 </body>
