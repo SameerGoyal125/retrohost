@@ -64,5 +64,26 @@ shows the scorecard with the divergent figure's diff, asks whether to post, and
 pauses for my approval before creating the public issue. Then I refresh the
 browser and the session is still there.
 
+## It actually worked
+
+I ran the full flow live on TrueForge. The agent classified the reproducible
+fixture as **REPRODUCED** and the divergent one as **FAILED** (with a side-by-side
+diff and a correct root-cause diagnosis of the stale claimed artifact). It asked
+whether to post, then **paused for my approval** before calling `create_issue` —
+and on approval it created **GitHub issue #1** on the repo. The control-and-safety
+gate worked end-to-end on a real write.
+
+## Then I pointed it at a real paper
+
+To prove it wasn't just the synthetic fixtures, I ran Retrohost against a **real
+published paper** — *"Get in Researchers; We're Measuring Reproducibility"*, a
+reproducibility study of ML papers in security conferences. The agent extracted
+the author-run figures from the paper's notebook, handled the fact that the repo
+pins 2021-era dependencies that can't install on modern Python, spawned **8
+parallel subagents** (one per figure), and classified each with code-computed
+evidence. Final report: **6 REPRODUCED, 2 PARTIAL, 0 FAILED**. When the GitHub
+backend was briefly down, it honestly saved the ready-to-post issue rather than
+faking success.
+
 *Retrohost reproduces Python-based paper code. R / notebook / shell papers
 classify as FAILED with the reason recorded.*
