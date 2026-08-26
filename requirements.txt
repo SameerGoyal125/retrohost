@@ -1,0 +1,10 @@
+# Dependencies for the Retrohost seed fixtures and reproduction engine.
+# The fixtures are intentionally dependency-light (stdlib + optional matplotlib).
+# The reproduction engine runs paper code in an isolated sandbox; these are the
+# packages the sandbox image should have for the seeded fixtures.
+
+# Core reproduction (numeric comparison + CSV handling)
+numpy>=1.24
+
+# Optional: figure generation in the seed fixtures (skipped if absent)
+matplotlib>=3.7

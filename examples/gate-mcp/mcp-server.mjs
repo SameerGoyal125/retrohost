@@ -8,6 +8,21 @@ import { randomUUID } from "crypto";
 import http from "node:http";
 
 const sessions = new Map();
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
+function removeSession(id) {
+  const entry = sessions.get(id);
+  if (!entry) return;
+  sessions.delete(id);
+  console.log(`Session ${id} removed (${sessions.size} active)`);
+}
+
+function touchSession(id) {
+  const entry = sessions.get(id);
+  if (!entry) return;
+  clearTimeout(entry.timer);
+  entry.timer = setTimeout(() => removeSession(id), IDLE_TIMEOUT_MS);
+}
 
 function getOrCreateSession() {
   const id = randomUUID();
@@ -22,33 +37,55 @@ function getOrCreateSession() {
   );
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: () => id,
+    onclose: () => removeSession(id),
   });
-  const entry = { server, transport, id };
+  const timer = setTimeout(() => removeSession(id), IDLE_TIMEOUT_MS);
+  const entry = { server, transport, id, timer };
   sessions.set(id, entry);
   return entry;
 }
 
+async function collectBody(req) {
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  return JSON.parse(Buffer.concat(chunks).toString());
+}
+
 const httpServer = http.createServer(async (req, res) => {
-  if (req.method === "POST" && req.url === "/mcp") {
+  if (req.url === "/mcp") {
     try {
-    // Collect body
-    const chunks = [];
-    for await (const chunk of req) chunks.push(chunk);
-    const body = JSON.parse(Buffer.concat(chunks).toString());
+      if (req.method === "POST") {
+        const body = await collectBody(req);
+        const isInit = body?.method === "initialize";
+        const sessionId = req.headers["mcp-session-id"];
 
-    const isInit = body?.method === "initialize";
-    const sessionId = req.headers["mcp-session-id"];
-
-      if (isInit) {
-        const { server, transport } = getOrCreateSession();
-        await server.connect(transport);
-        await transport.handleRequest(req, res, body);
-      } else if (sessionId && sessions.has(sessionId)) {
-        const { transport } = sessions.get(sessionId);
-        await transport.handleRequest(req, res, body);
+        if (isInit) {
+          const { server, transport } = getOrCreateSession();
+          await server.connect(transport);
+          await transport.handleRequest(req, res, body);
+        } else if (sessionId && sessions.has(sessionId)) {
+          touchSession(sessionId);
+          const { transport } = sessions.get(sessionId);
+          await transport.handleRequest(req, res, body);
+        } else {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Missing or invalid session" }));
+        }
+      } else if (req.method === "DELETE") {
+        const sessionId = req.headers["mcp-session-id"];
+        if (sessionId && sessions.has(sessionId)) {
+          const { transport } = sessions.get(sessionId);
+          await transport.close();
+          removeSession(sessionId);
+          res.writeHead(200);
+          res.end();
+        } else {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Missing or invalid session" }));
+        }
       } else {
-        res.writeHead(400, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Missing or invalid session" }));
+        res.writeHead(405);
+        res.end("Method not allowed");
       }
     } catch (err) {
       console.error("MCP error:", err);

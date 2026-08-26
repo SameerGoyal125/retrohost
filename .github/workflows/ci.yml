@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate-fixtures:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install deps
+        run: pip install -r requirements.txt
+      - name: Validate reproducible-paper fixture
+        run: |
+          cd examples/reproducible-paper
+          python analysis.py
+          python -c "
+          import csv
+          def load(p):
+              with open(p, newline='') as f:
+                  return {r['metric']: float(r['mean']) for r in csv.DictReader(f)}
+          actual = load('results/table.csv')
+          claimed = load('results/claimed.csv')
+          assert actual == claimed, f'REPRODUCIBLE fixture diverged: {actual} != {claimed}'
+          print('reproducible-paper: REPRODUCED (matches claimed)')
+          "
+      - name: Validate divergent-paper fixture
+        run: |
+          cd examples/divergent-paper
+          python analysis.py
+          python -c "
+          import csv
+          def load(p):
+              with open(p, newline='') as f:
+                  return {r['metric']: float(r['mean']) for r in csv.DictReader(f)}
+          actual = load('results/table.csv')
+          claimed = load('results/claimed.csv')
+          assert actual != claimed, 'DIVERGENT fixture should not match claimed'
+          print('divergent-paper: DIVERGES (correct - stale claimed artifact)')
+          "
