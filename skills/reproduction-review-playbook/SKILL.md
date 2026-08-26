@@ -48,16 +48,23 @@ Any of:
 
 Before running the analysis script, prepare the sandbox:
 
-1. **Static import scan.** Read the target script and extract top-level
-   `import X` and `from X import ...` module names.
+1. **Import scan via Python AST.** Parse the target script with Python's `ast`
+   module to extract every `import X` and `from X import ...` statement,
+   including imports inside functions, classes, and conditional blocks. Then
+   follow local module imports transitively: for any name that resolves to a
+   `.py` file within the repo, parse that file too and collect its third-party
+   imports. Stop recursion at the repo boundary.
 2. **Declared dependency check.** If the repo contains `requirements.txt`,
    `environment.yml` (pip section only), or `Pipfile`, read the declared
    dependencies.
-3. **Install missing modules.** For any module that is not already available,
-   run `pip install <name>` in quiet mode. Use these common name mappings:
-   `cv2` → `opencv-python`, `sklearn` → `scikit-learn`, `PIL` → `pillow`.
-   If the module name does not match a known mapping, install the name as-is.
-   Total environment budget: 120 seconds. Use quiet mode (`pip install -q`).
+3. **Install missing modules.** For any module not already available:
+   - If a manifest declares a distribution for it (e.g. `PyYAML==6.0` in
+     requirements.txt), install the declared distribution with its version
+     constraint. Declared constraints always win over latest-release installs.
+   - Otherwise, use the import→distribution name mapping: `cv2` →
+     `opencv-python`, `sklearn` → `scikit-learn`, `PIL` → `pillow`. If no
+     mapping applies, install the import name as-is.
+     Total environment budget: 120 seconds. Use quiet mode (`pip install -q`).
 4. **Re-probe every import.** After installation, re-attempt every import from
    step 1. If an import still fails, record it.
 5. **Only classify FAILED for a dependency if the import still fails after the
@@ -65,6 +72,11 @@ Before running the analysis script, prepare the sandbox:
    `missing dependency: <name> (install attempted, failed: <short error>)`.
 6. **Record an environment report:** declared deps found, modules installed
    (with versions), and anything still missing.
+7. **Runtime safety net.** If an `ImportError` or `ModuleNotFoundError` escapes
+   during the script's execution, parse the missing module name from the error
+   message, make ONE bounded pip install attempt for it, and re-run the script
+   once. Only after this second attempt may the verdict be
+   FAILED-for-dependency.
 
 ## Stability check
 
@@ -73,6 +85,10 @@ Before running the analysis script, prepare the sandbox:
 - Compare run1 vs run2 outputs using the same tolerance policy. Label the
   result `stable` (all match) or `varies between runs (nondeterministic)`
   (any mismatch).
+- If the second run raises an exception or times out, this does NOT change the
+  classification. Record `stability: second run failed (<short reason>)` as
+  annotation; the first run remains the sole basis for claimed-vs-reproduced
+  classification.
 - If the first run took > 30 seconds, label `not checked (runtime > 30s)`.
 - Classification is ALWAYS claimed-vs-reproduced; stability is annotation
   only. A REPRODUCED verdict on varying output must carry the variance note.

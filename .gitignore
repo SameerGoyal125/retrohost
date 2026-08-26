@@ -16,3 +16,7 @@ __pycache__/
 
 # ponytail: TrueForge local SQLite DB — add the actual path here if it ever
 # falls under this repo (e.g. trueforge/data/*.db or *.sqlite3)
+
+# Local-only working files
+.playwright-mcp/
+video.md
