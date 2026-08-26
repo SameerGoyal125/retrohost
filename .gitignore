@@ -10,5 +10,9 @@ node_modules/
 .omo/
 .codegraph/
 
+# Python bytecode
+__pycache__/
+*.pyc
+
 # ponytail: TrueForge local SQLite DB — add the actual path here if it ever
 # falls under this repo (e.g. trueforge/data/*.db or *.sqlite3)
