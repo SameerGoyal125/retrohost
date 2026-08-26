@@ -51,3 +51,17 @@ When a result does not reproduce, report:
 
 The default per-script timeout is 120 seconds. A script that exceeds it is
 FAILED with reason `timeout`.
+
+## Stability comparison (v2)
+
+Run-to-run comparison uses the identical numeric and structural rules as
+claimed-vs-reproduced (same rtol/atol, same structural checks). Outcomes:
+
+- **stable**: all run1 vs run2 comparisons match within tolerance.
+- **varies between runs (nondeterministic)**: any run1 vs run2 comparison
+  mismatches.
+- **not checked**: first-run wall time exceeded 30 seconds, so no second
+  run was attempted.
+
+Instability never upgrades or downgrades a classification by itself. It is
+recorded as evidence alongside the claimed-vs-reproduced verdict.
