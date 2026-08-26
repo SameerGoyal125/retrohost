@@ -117,4 +117,4 @@ findings were addressed before merge. No review trail was fabricated.
 
 6 PRs merged, 7 Qodo findings, all addressed with follow-up commits and
 re-reviewed clean. The trail is visible at
-https://github.com/SameerGoyal125/agentic-ai/pulls.
+https://github.com/SameerGoyal125/retrohost/pulls.
