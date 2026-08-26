@@ -109,7 +109,7 @@ findings were addressed before merge. No review trail was fabricated.
 | PR | Work | Qodo findings | Outcome |
 |----|------|---------------|---------|
 | #2 | CI workflow + requirements.txt | 2 (lockfile/manifest mismatch, MCP session leak) | Fixed, re-reviewed clean, merged |
-| #3 | pytest suite (25 tests) | 3 (tolerance-policy bypass, session leak, lockfile) | Fixed, re-reviewed clean, merged |
+| #3 | pytest suite (25 tests) | 3 (tolerance-policy bypass, session leak, lockfile) | Session-leak + lockfile findings fixed in-PR; tolerance fix applied to main immediately after merge (242a01d) |
 | #4 | CONTRIBUTING.md | 0 | Merged |
 | #5 | README overhaul | 0 | Merged |
 | #6 | `--json` output mode | 0 | Merged |
