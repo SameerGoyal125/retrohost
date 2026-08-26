@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Reproduction Detective — Retrohost</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23141c2c'/%3E%3Ccircle cx='14' cy='14' r='8' fill='none' stroke='%23c9a227' stroke-width='3'/%3E%3Cpath d='M20 20l7 7' stroke='%23c9a227' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+  /* ============ Design tokens ============ */
+  :root {
+    --bg: #0e1420;            /* deep navy/charcoal */
+    --bg-2: #141c2c;
+    --bg-3: #1a2438;
+    --line: #26324a;
+    --brass: #c9a227;
+    --brass-2: #e0b84c;
+    --amber: #e8a33d;
+    --cream: #f2e9d0;         /* parchment */
+    --cream-2: #e7dbb8;
+    --ink: #2b2416;           /* text on parchment */
+    --ink-soft: #5c5138;
+    --muted: #8b95ab;         /* text on navy */
+    --ok: #4caf7d;
+    --warn: #e8a33d;
+    --bad: #d96c5f;
+    --radius: 14px;
+    --shadow: 0 10px 30px rgba(0,0,0,.35);
+    --font: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --mono: "Cascadia Code", Consolas, "SF Mono", Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--font);
+    background:
+      radial-gradient(1200px 600px at 85% -10%, rgba(201,162,39,.08), transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, rgba(201,162,39,.05), transparent 60%),
+      var(--bg);
+    color: var(--cream);
+    min-height: 100vh;
+    line-height: 1.5;
+  }
+
+  /* subtle fingerprint watermark */
+  body::before {
+    content: "";
+    position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Cg fill='none' stroke='%23c9a227' stroke-opacity='.05' stroke-width='2'%3E%3Ccircle cx='60' cy='60' r='8'/%3E%3Ccircle cx='60' cy='60' r='18'/%3E%3Ccircle cx='60' cy='60' r='30'/%3E%3Ccircle cx='60' cy='60' r='44'/%3E%3Cpath d='M60 8v14M60 98v14M8 60h14M98 60h14M23 23l10 10M87 87l10 10M97 23l-10 10M23 97l10-10'/%3E%3C/g%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrap { position: relative; z-index: 1; max-width: 1200px; margin: 0 auto; padding: 28px 24px 60px; }
+
+  /* ============ Header ============ */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 24px; flex-wrap: wrap;
+    padding-bottom: 22px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 24px;
+  }
+
+  .brand h1 {
+    font-size: clamp(1.6rem, 3.4vw, 2.4rem);
+    letter-spacing: .5px;
+    color: var(--cream);
+    display: flex; align-items: center; gap: 12px;
+  }
+  .brand h1 .amp { color: var(--brass); }
+  .brand .subtitle {
+    color: var(--muted);
+    font-size: .95rem;
+    margin-top: 4px;
+  }
+  .brand .subtitle b { color: var(--brass-2); font-weight: 600; }
+
+  /* ============ Mascot ============ */
+  .mascot-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+
+  #mascot { width: 150px; height: 150px; filter: drop-shadow(0 8px 18px rgba(0,0,0,.45)); }
+
+  #status-line {
+    font-size: .85rem;
+    color: var(--brass-2);
+    letter-spacing: .4px;
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    padding: 4px 14px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+
+  /* --- mascot state animations --- */
+  #mascot .m-hidden { opacity: 0; }
+  #mascot.state-investigating .m-hidden.inv,
+  #mascot.state-evidence .m-hidden.ev,
+  #mascot.state-verdict .m-hidden.ver { opacity: 1; }
+
+  #mascot .m-hidden { transition: opacity .3s ease; }
+
+  /* thinking dots */
+  #mascot .dot { animation: blink 1.2s infinite; }
+  #mascot .dot.d2 { animation-delay: .2s; }
+  #mascot .dot.d3 { animation-delay: .4s; }
+  @keyframes blink { 0%,100% { opacity: .15; } 50% { opacity: 1; } }
+
+  /* lightbulb glow */
+  #mascot .bulb { animation: glow 1.4s ease-in-out infinite; transform-origin: 50% 50%; }
+  @keyframes glow {
+    0%,100% { transform: scale(1); opacity: .85; }
+    50% { transform: scale(1.12); opacity: 1; }
+  }
+
+  /* magnifier scanning */
+  #mascot.state-investigating #magnifier {
+    animation: scan 1.6s ease-in-out infinite;
+    transform-origin: 52px 160px;
+  }
+  @keyframes scan {
+    0%,100% { transform: rotate(-6deg) translateX(0); }
+    50% { transform: rotate(8deg) translateX(6px); }
+  }
+
+  /* pipe puff */
+  #mascot .puff { opacity: 0; }
+  #mascot.state-verdict .puff {
+    animation: puff 1.8s ease-out infinite;
+  }
+  #mascot.state-verdict .puff.p2 { animation-delay: .6s; }
+  #mascot.state-verdict .puff.p3 { animation-delay: 1.2s; }
+  @keyframes puff {
+    0%   { transform: translate(0,0) scale(.5); opacity: 0; }
+    20%  { opacity: .8; }
+    100% { transform: translate(10px,-26px) scale(1.15); opacity: 0; }
+  }
+
+  /* ============ New case ============ */
+  .new-case {
+    display: flex; gap: 12px; flex-wrap: wrap;
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow);
+  }
+  .new-case .label {
+    display: flex; align-items: center; gap: 8px;
+    color: var(--brass-2); font-weight: 600; font-size: .9rem;
+    letter-spacing: .3px;
+  }
+  .new-case .label svg { flex: none; }
+  #repo-input {
+    flex: 1; min-width: 240px;
+    background: var(--bg-3);
+    border: 1px solid var(--line);
+    color: var(--cream);
+    font-family: var(--mono);
+    font-size: .95rem;
+    padding: 11px 14px;
+    border-radius: 10px;
+    outline: none;
+    transition: border-color .2s;
+  }
+  #repo-input:focus { border-color: var(--brass); }
+  #repo-input::placeholder { color: var(--muted); }
+
+  #begin-btn {
+    background: var(--brass);
+    color: #1a1408;
+    border: none;
+    font-weight: 700;
+    font-size: .95rem;
+    letter-spacing: .4px;
+    padding: 11px 22px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background .2s, transform .1s;
+  }
+  #begin-btn:hover { background: var(--brass-2); }
+  #begin-btn:active { transform: translateY(1px); }
+  #begin-btn:disabled { opacity: .55; cursor: wait; }
+
+  /* ============ Board ============ */
+  .board {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr 1fr;
+    gap: 18px;
+    margin-bottom: 24px;
+  }
+
+  .panel {
+    background: var(--cream);
+    color: var(--ink);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    display: flex; flex-direction: column;
+    min-height: 320px;
+  }
+  .panel > h2 {
+    display: flex; align-items: center; gap: 8px;
+    font-size: .85rem;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    padding: 12px 16px;
+    border-bottom: 2px solid var(--brass);
+    background: var(--cream-2);
+  }
+  .panel > h2 .tag { margin-left: auto; font-size: .72rem; background: var(--ink); color: var(--cream); padding: 2px 8px; border-radius: 999px; letter-spacing: .5px; }
+
+  .panel .body { padding: 14px 16px; overflow-y: auto; max-height: 460px; flex: 1; }
+
+  .empty {
+    color: var(--ink-soft);
+    font-style: italic;
+    font-size: .9rem;
+    text-align: center;
+    padding: 40px 10px;
+  }
+
+  /* evidence items */
+  .ev-item {
+    border: 1px solid #d8cba4;
+    border-left: 3px solid var(--brass);
+    background: #faf5e6;
+    border-radius: 8px;
+    padding: 9px 11px;
+    margin-bottom: 9px;
+    font-size: .85rem;
+  }
+  .ev-item .ev-tool {
+    font-family: var(--mono);
+    font-size: .78rem;
+    color: #7a5c10;
+    font-weight: 700;
+    display: block;
+    margin-bottom: 3px;
+  }
+  .ev-item .ev-args {
+    color: var(--ink-soft);
+    font-family: var(--mono);
+    font-size: .75rem;
+    word-break: break-word;
+    white-space: pre-wrap;
+  }
+  .ev-item .ev-msg { color: var(--ink); }
+
+  /* deduction items */
+  .ded-item {
+    border-left: 3px solid var(--amber);
+    padding: 8px 0 8px 12px;
+    margin-bottom: 10px;
+    font-size: .88rem;
+    color: var(--ink);
+  }
+  .ded-item .ded-role {
+    font-size: .72rem; text-transform: uppercase; letter-spacing: 1px;
+    color: #8a6d1f; font-weight: 700; display: block; margin-bottom: 2px;
+  }
+  .ded-item p { white-space: pre-wrap; word-break: break-word; }
+
+  /* verdict */
+  .verdict-box { text-align: center; padding: 20px 16px; }
+  .verdict-stamp {
+    display: inline-block;
+    font-size: 1.5rem;
+    font-weight: 800;
+    letter-spacing: 2px;
+    padding: 10px 26px;
+    border-radius: 10px;
+    border: 3px solid;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+  .verdict-stamp.reproduced { color: var(--ok); border-color: var(--ok); background: rgba(76,175,125,.08); }
+  .verdict-stamp.partial    { color: var(--warn); border-color: var(--warn); background: rgba(232,163,61,.08); }
+  .verdict-stamp.failed     { color: var(--bad); border-color: var(--bad); background: rgba(217,108,95,.08); }
+  .verdict-stamp.none       { color: var(--ink-soft); border-color: #c9bd97; }
+
+  .verdict-counts { display: flex; justify-content: center; gap: 10px; margin: 12px 0; flex-wrap: wrap; }
+  .vc {
+    font-size: .8rem; font-weight: 700; letter-spacing: .5px;
+    padding: 5px 12px; border-radius: 999px;
+  }
+  .vc.ok { background: rgba(76,175,125,.15); color: #2e7d52; }
+  .vc.warn { background: rgba(232,163,61,.18); color: #8a5a10; }
+  .vc.bad { background: rgba(217,108,95,.15); color: #a03c30; }
+
+  .verdict-note { font-size: .85rem; color: var(--ink-soft); }
+
+  /* ============ History ============ */
+  .history {
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .history > h2 {
+    display: flex; align-items: center; gap: 8px;
+    font-size: .85rem; letter-spacing: 1.2px; text-transform: uppercase;
+    color: var(--brass-2);
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .history > h2 .dot-live {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--ok);
+    box-shadow: 0 0 8px var(--ok);
+    margin-left: auto;
+  }
+  .history > h2 .dot-live.off { background: var(--bad); box-shadow: 0 0 8px var(--bad); }
+
+  #history-list { list-style: none; max-height: 300px; overflow-y: auto; }
+  #history-list li {
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--line);
+    cursor: pointer;
+    transition: background .15s;
+  }
+  #history-list li:last-child { border-bottom: none; }
+  #history-list li:hover { background: var(--bg-3); }
+  #history-list li.active { background: var(--bg-3); border-left: 3px solid var(--brass); }
+  #history-list .h-title {
+    color: var(--cream); font-size: .9rem; font-weight: 600;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  #history-list .h-meta { color: var(--muted); font-size: .75rem; margin-top: 2px; }
+  #history-list .h-empty { color: var(--muted); font-style: italic; cursor: default; }
+  #history-list .h-empty:hover { background: transparent; }
+
+  /* ============ Banner / errors ============ */
+  .banner {
+    display: none;
+    align-items: center; gap: 10px;
+    background: rgba(217,108,95,.12);
+    border: 1px solid rgba(217,108,95,.5);
+    color: #f0b3ab;
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-bottom: 18px;
+    font-size: .9rem;
+  }
+  .banner.show { display: flex; }
+  .banner b { color: #ffd9d3; }
+
+  /* ============ Responsive ============ */
+  @media (max-width: 900px) {
+    .board { grid-template-columns: 1fr; }
+    .panel { min-height: 0; }
+    .panel .body { max-height: 300px; }
+    header { justify-content: center; text-align: center; }
+    .brand h1 { justify-content: center; }
+  }
+  @media (max-width: 480px) {
+    .wrap { padding: 18px 14px 40px; }
+    #mascot { width: 120px; height: 120px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <h1>The Reproduction <span class="amp">Detective</span></h1>
+      <p class="subtitle"><b>Retrohost</b> — Deep-dives into a repo and verifies its benchmarks.</p>
+    </div>
+
+    <div class="mascot-wrap">
+      <svg id="mascot" class="state-idle" viewBox="0 0 200 200" role="img" aria-label="Sherlock Holmes mascot">
+        <!-- ===== thinking dots (investigating) ===== -->
+        <g class="m-hidden inv">
+          <circle class="dot d1" cx="70" cy="26" r="5" fill="#e0b84c"/>
+          <circle class="dot d2" cx="84" cy="18" r="5" fill="#e0b84c"/>
+          <circle class="dot d3" cx="99" cy="26" r="5" fill="#e0b84c"/>
+        </g>
+        <!-- ===== lightbulb (evidence) ===== -->
+        <g class="m-hidden ev">
+          <g class="bulb">
+            <circle cx="100" cy="22" r="11" fill="#e8a33d"/>
+            <rect x="95" y="33" width="10" height="6" rx="2" fill="#c9a227"/>
+            <path d="M93 20h14M96 15h8" stroke="#f2e9d0" stroke-width="2" stroke-linecap="round"/>
+          </g>
+        </g>
+        <!-- ===== body / coat ===== -->
+        <path d="M62 118 h76 v34 a10 10 0 0 1 -10 10 h-56 a10 10 0 0 1 -10 -10 z" fill="#1a2438"/>
+        <path d="M100 118 v44" stroke="#c9a227" stroke-width="3"/>
+        <circle cx="100" cy="128" r="3" fill="#c9a227"/>
+        <circle cx="100" cy="142" r="3" fill="#c9a227"/>
+        <circle cx="100" cy="156" r="3" fill="#c9a227"/>
+        <!-- collar -->
+        <path d="M78 118 l22 14 22 -14" fill="none" stroke="#e0b84c" stroke-width="3" stroke-linecap="round"/>
+        <!-- ===== head ===== -->
+        <circle cx="100" cy="82" r="36" fill="#f2e9d0"/>
+        <!-- ears -->
+        <circle cx="64" cy="84" r="7" fill="#e7dbb8"/>
+        <circle cx="136" cy="84" r="7" fill="#e7dbb8"/>
+        <!-- deerstalker hat -->
+        <path d="M62 74 a38 38 0 0 1 76 0 z" fill="#141c2c"/>
+        <rect x="62" y="70" width="76" height="9" rx="4" fill="#c9a227"/>
+        <circle cx="100" cy="66" r="4" fill="#c9a227"/>
+        <!-- ear flaps -->
+        <path d="M62 76 q-8 4 -4 14 q4 8 12 4 l4 -10 z" fill="#141c2c"/>
+        <path d="M138 76 q8 4 4 14 q-4 8 -12 4 l-4 -10 z" fill="#141c2c"/>
+        <!-- eyes -->
+        <circle cx="88" cy="84" r="3.5" fill="#2b2416"/>
+        <circle cx="112" cy="84" r="3.5" fill="#2b2416"/>
+        <!-- brows -->
+        <path d="M82 76 q6 -4 12 -1" stroke="#2b2416" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+        <path d="M106 75 q6 -3 12 1" stroke="#2b2416" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+        <!-- nose -->
+        <path d="M100 90 l-3 4 h6 z" fill="#2b2416"/>
+        <!-- mustache -->
+        <path d="M84 100 q8 5 16 0 q-8 4 -16 0 z" fill="#5c5138"/>
+        <path d="M100 100 q8 5 16 0 q-8 4 -16 0 z" fill="#5c5138"/>
+        <!-- ===== pipe ===== -->
+        <g id="pipe">
+          <rect x="112" y="98" width="26" height="4" rx="2" fill="#c9a227" transform="rotate(8 112 100)"/>
+          <path d="M136 96 a8 8 0 0 1 0 12 l-4 -2 a8 8 0 0 0 0 -8 z" fill="#8a5a10"/>
+          <ellipse cx="138" cy="102" rx="4" ry="2.5" fill="#2b2416"/>
+        </g>
+        <!-- ===== pipe puffs (verdict) ===== -->
+        <g class="m-hidden ver">
+          <circle class="puff p1" cx="140" cy="92" r="5" fill="#e7dbb8"/>
+          <circle class="puff p2" cx="146" cy="86" r="6" fill="#e7dbb8"/>
+          <circle class="puff p3" cx="142" cy="78" r="7" fill="#e7dbb8"/>
+        </g>
+        <!-- ===== left arm + magnifier ===== -->
+        <g id="magnifier">
+          <path d="M66 120 q-14 10 -8 26" stroke="#1a2438" stroke-width="12" fill="none" stroke-linecap="round"/>
+          <circle cx="56" cy="152" r="5" fill="#f2e9d0"/>
+          <circle cx="52" cy="160" r="16" fill="none" stroke="#c9a227" stroke-width="6"/>
+          <circle cx="52" cy="160" r="10" fill="#e7dbb8" opacity=".55"/>
+          <path d="M62 172 l10 10" stroke="#c9a227" stroke-width="6" stroke-linecap="round"/>
+        </g>
+        <!-- ===== right arm ===== -->
+        <path d="M134 120 q14 10 8 26" stroke="#1a2438" stroke-width="12" fill="none" stroke-linecap="round"/>
+        <circle cx="144" cy="152" r="5" fill="#f2e9d0"/>
+      </svg>
+      <div id="status-line">On the case…</div>
+    </div>
+  </header>
+
+  <div id="banner" class="banner">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <span id="banner-text"></span>
+  </div>
+
+  <section class="new-case">
+    <span class="label">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>
+      New case
+    </span>
+    <input id="repo-input" type="text" spellcheck="false"
+           placeholder="owner/repo — e.g. SameerGoyal125/retrohost"
+           aria-label="Repository to investigate">
+    <button id="begin-btn">Begin investigation</button>
+  </section>
+
+  <main class="board">
+    <section class="panel">
+      <h2>Evidence <span class="tag" id="ev-count">0</span></h2>
+      <div class="body" id="evidence-list">
+        <p class="empty">No case files opened yet. Enter a repo or pick a recent case.</p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Deduction</h2>
+      <div class="body" id="deduction-list">
+        <p class="empty">The detective's reasoning will appear here.</p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Verdict</h2>
+      <div class="body" id="verdict-box">
+        <div class="verdict-box">
+          <div class="verdict-stamp none">Awaiting evidence</div>
+          <p class="verdict-note">Classification appears once the agent reports REPRODUCED, PARTIAL or FAILED.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <aside class="history">
+    <h2>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><polyline points="12 7 12 12 15 15"/></svg>
+      Recent cases
+      <span class="dot-live" id="api-dot" title="TrueForge API status"></span>
+    </h2>
+    <ul id="history-list">
+      <li class="h-empty">Contacting the case files…</li>
+    </ul>
+  </aside>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var API = "/api/v1";
+  var sessions = [];
+  var currentId = null;
+
+  var $ = function (id) { return document.getElementById(id); };
+  var mascot = $("mascot");
+  var statusLine = $("status-line");
+  var banner = $("banner");
+  var bannerText = $("banner-text");
+
+  /* ---------- mascot state ---------- */
+  var STATES = {
+    idle:         { cls: "state-idle",         line: "On the case…" },
+    investigating:{ cls: "state-investigating", line: "Examining evidence…" },
+    evidence:     { cls: "state-evidence",      line: "A clue! Examining evidence…" },
+    verdict:      { cls: "state-verdict",       line: "Case closed." }
+  };
+
+  function setState(name) {
+    var s = STATES[name] || STATES.idle;
+    mascot.setAttribute("class", s.cls);
+    statusLine.textContent = s.line;
+  }
+
+  /* ---------- banner ---------- */
+  function showBanner(msg) {
+    bannerText.innerHTML = msg;
+    banner.classList.add("show");
+  }
+  function hideBanner() { banner.classList.remove("show"); }
+
+  /* ---------- API ---------- */
+  function fetchJSON(url) {
+    return fetch(url).then(function (res) {
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.json();
+    });
+  }
+
+  function setApiOnline(on) {
+    var dot = $("api-dot");
+    dot.classList.toggle("off", !on);
+    dot.title = on ? "TrueForge API reachable" : "TrueForge API unreachable";
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return "";
+    var d = new Date(iso);
+    if (isNaN(d)) return iso;
+    return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  }
+
+  /* ---------- sessions list ---------- */
+  function loadSessions() {
+    fetchJSON(API + "/sessions")
+      .then(function (data) {
+        sessions = (data && data.data) || [];
+        setApiOnline(true);
+        hideBanner();
+        renderHistory();
+      })
+      .catch(function () {
+        setApiOnline(false);
+        renderHistory();
+        showBanner("The detective can't reach the case files. Is the TrueForge server running? " +
+          "Start it (WSL: <code>start-tf.sh</code>) and reload.");
+      });
+  }
+
+  function renderHistory() {
+    var ul = $("history-list");
+    ul.innerHTML = "";
+    if (!sessions.length) {
+      var li = document.createElement("li");
+      li.className = "h-empty";
+      li.textContent = "No case files on record.";
+      ul.appendChild(li);
+      return;
+    }
+    sessions.forEach(function (s) {
+      var li = document.createElement("li");
+      if (s.id === currentId) li.className = "active";
+      var t = document.createElement("div");
+      t.className = "h-title";
+      t.textContent = s.title || "(untitled case)";
+      var m = document.createElement("div");
+      m.className = "h-meta";
+      m.textContent = (s.created_at ? fmtDate(s.created_at) + " · " : "") + (s.id || "").slice(0, 8);
+      li.appendChild(t);
+      li.appendChild(m);
+      li.addEventListener("click", function () { openSession(s.id); });
+      ul.appendChild(li);
+    });
+  }
+
+  /* ---------- session events ---------- */
+  function openSession(id) {
+    currentId = id;
+    renderHistory();
+    setState("investigating");
+    hideBanner();
+    $("evidence-list").innerHTML = '<p class="empty">Reading the case files…</p>';
+    $("deduction-list").innerHTML = '<p class="empty">Reading the case files…</p>';
+    $("verdict-box").innerHTML = '<div class="verdict-box"><div class="verdict-stamp none">Investigating…</div></div>';
+
+    fetchJSON(API + "/sessions/" + encodeURIComponent(id) + "/events?limit=50")
+      .then(function (data) {
+        var events = (data && data.data) || [];
+        renderCase(events);
+      })
+      .catch(function () {
+        setState("idle");
+        showBanner("The detective can't reach the case files for this session. The API may be down or CORS-restricted.");
+        $("evidence-list").innerHTML = '<p class="empty">Case files unreachable.</p>';
+        $("deduction-list").innerHTML = '<p class="empty">Case files unreachable.</p>';
+      });
+  }
+
+  function evText(ev) {
+    if (!ev) return "";
+    if (typeof ev.content === "string") return ev.content;
+    if (Array.isArray(ev.content)) {
+      return ev.content.map(function (c) {
+        if (typeof c === "string") return c;
+        if (c && c.text) return c.text;
+        return "";
+      }).join("\n");
+    }
+    return "";
+  }
+
+  function renderCase(events) {
+    var evidence = [];
+    var deductions = [];
+    var verdicts = { REPRODUCED: 0, PARTIAL: 0, FAILED: 0 };
+    var sawSubagents = false;
+    var sawClassification = false;
+
+    events.forEach(function (entry) {
+      var ev = (entry && entry.event) || entry || {};
+      var text = evText(ev);
+      var tcs = ev.tool_calls || [];
+
+      /* tool calls → evidence */
+      tcs.forEach(function (tc) {
+        var fn = (tc.function && tc.function.name) || tc.name || "tool";
+        var args = "";
+        try {
+          var raw = (tc.function && tc.function.arguments) || tc.arguments || "";
+          if (typeof raw === "string" && raw) {
+            var parsed = JSON.parse(raw);
+            args = JSON.stringify(parsed, null, 1).slice(0, 300);
+          } else if (raw) {
+            args = JSON.stringify(raw).slice(0, 300);
+          }
+        } catch (e) { args = String(raw || "").slice(0, 300); }
+        evidence.push({ tool: fn, args: args });
+        if (/create_sub_agent|sub_agent|sandbox|run_code|execute/i.test(fn)) sawSubagents = true;
+      });
+
+      /* model messages → deduction */
+      if (ev.type === "model" || ev.type === "message" || (text && !tcs.length)) {
+        var clean = text.trim();
+        if (clean) deductions.push({ role: ev.role || "agent", text: clean.slice(0, 600) });
+      }
+
+      /* classification scan */
+      var up = text.toUpperCase();
+      ["REPRODUCED", "PARTIAL", "FAILED"].forEach(function (k) {
+        var re = new RegExp("\\b" + k + "\\b", "g");
+        var n = (up.match(re) || []).length;
+        if (n > 0) {
+          verdicts[k] += n;
+          sawClassification = true;
+        }
+      });
+    });
+
+    /* ---- evidence panel ---- */
+    var evEl = $("evidence-list");
+    evEl.innerHTML = "";
+    $("ev-count").textContent = evidence.length;
+    if (!evidence.length) {
+      evEl.innerHTML = '<p class="empty">No tool calls recorded in this session.</p>';
+    } else {
+      evidence.slice(0, 40).forEach(function (e) {
+        var d = document.createElement("div");
+        d.className = "ev-item";
+        var t = document.createElement("span");
+        t.className = "ev-tool";
+        t.textContent = "🔍 " + e.tool;
+        d.appendChild(t);
+        if (e.args) {
+          var a = document.createElement("div");
+          a.className = "ev-args";
+          a.textContent = e.args;
+          d.appendChild(a);
+        }
+        evEl.appendChild(d);
+      });
+    }
+
+    /* ---- deduction panel ---- */
+    var dedEl = $("deduction-list");
+    dedEl.innerHTML = "";
+    if (!deductions.length) {
+      dedEl.innerHTML = '<p class="empty">No reasoning captured in this session.</p>';
+    } else {
+      deductions.slice(0, 30).forEach(function (d) {
+        var item = document.createElement("div");
+        item.className = "ded-item";
+        var r = document.createElement("span");
+        r.className = "ded-role";
+        r.textContent = d.role;
+        var p = document.createElement("p");
+        p.textContent = d.text;
+        item.appendChild(r);
+        item.appendChild(p);
+        dedEl.appendChild(item);
+      });
+    }
+
+    /* ---- verdict panel ---- */
+    var total = verdicts.REPRODUCED + verdicts.PARTIAL + verdicts.FAILED;
+    var vb = $("verdict-box");
+    vb.innerHTML = "";
+    var box = document.createElement("div");
+    box.className = "verdict-box";
+
+    var stamp = document.createElement("div");
+    if (total === 0) {
+      stamp.className = "verdict-stamp none";
+      stamp.textContent = sawSubagents ? "In progress" : "No verdict yet";
+    } else {
+      var dominant = verdicts.REPRODUCED >= verdicts.PARTIAL && verdicts.REPRODUCED >= verdicts.FAILED
+        ? "REPRODUCED" : (verdicts.PARTIAL >= verdicts.FAILED ? "PARTIAL" : "FAILED");
+      stamp.className = "verdict-stamp " + dominant.toLowerCase();
+      stamp.textContent = dominant;
+    }
+    box.appendChild(stamp);
+
+    if (total > 0) {
+      var counts = document.createElement("div");
+      counts.className = "verdict-counts";
+      [["REPRODUCED", "ok", verdicts.REPRODUCED],
+       ["PARTIAL", "warn", verdicts.PARTIAL],
+       ["FAILED", "bad", verdicts.FAILED]].forEach(function (c) {
+        var s = document.createElement("span");
+        s.className = "vc " + c[1];
+        s.textContent = c[0] + " " + c[2];
+        counts.appendChild(s);
+      });
+      box.appendChild(counts);
+    }
+    var note = document.createElement("p");
+    note.className = "verdict-note";
+    note.textContent = total > 0
+      ? "Classification read from the agent's own report — " + total + " verdict(s) found."
+      : "The agent has not reported a classification yet.";
+    box.appendChild(note);
+    vb.appendChild(box);
+
+    /* ---- mascot state ---- */
+    if (sawClassification) setState("verdict");
+    else if (sawSubagents) setState("investigating");
+    else if (evidence.length || deductions.length) setState("evidence");
+    else setState("idle");
+  }
+
+  /* ---------- new case ---------- */
+  function beginInvestigation() {
+    var q = $("repo-input").value.trim();
+    if (!q) { $("repo-input").focus(); return; }
+
+    /* We can only read sessions — find one whose title mentions this repo. */
+    var match = sessions.find(function (s) {
+      return s.title && s.title.toLowerCase().indexOf(q.toLowerCase()) !== -1;
+    });
+    if (match) {
+      openSession(match.id);
+      return;
+    }
+    showBanner("No case file found for <b>" + escapeHtml(q) + "</b> yet. " +
+      "Start a chat with the <b>retrohost</b> agent in TrueForge and ask it to reproduce this repo — the case will appear here.");
+    setState("idle");
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  /* ---------- init ---------- */
+  $("begin-btn").addEventListener("click", beginInvestigation);
+  $("repo-input").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") beginInvestigation();
+  });
+
+  setState("idle");
+  loadSessions();
+  /* poll for new sessions every 15s */
+  setInterval(loadSessions, 15000);
+})();
+</script>
+</body>
+</html>
