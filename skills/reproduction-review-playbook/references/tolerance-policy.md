@@ -52,7 +52,7 @@ When a result does not reproduce, report:
 The default per-script timeout is 120 seconds. A script that exceeds it is
 FAILED with reason `timeout`.
 
-## Stability comparison (v2)
+## Stability comparison
 
 Run-to-run comparison uses the identical numeric and structural rules as
 claimed-vs-reproduced (same rtol/atol, same structural checks). Outcomes:

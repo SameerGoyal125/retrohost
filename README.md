@@ -57,6 +57,27 @@ The whole process usually takes five to ten minutes for a small paper
 (eight figures), depending on how long each analysis script takes to run
 and install its dependencies.
 
+### Environment-aware reproduction
+
+- **Environment-aware reproduction.** Before declaring any figure FAILED for
+  a missing dependency, the agent scans the script's imports (including
+  function-level and transitive local-module imports via AST), reads declared
+  dependencies (requirements.txt / environment.yml / Pipfile), installs what's
+  missing within a bounded 120-second budget, and re-probes. A dependency
+  failure is only reported after a documented install attempt.
+
+- **Stability checks.** Fast scripts (first run ≤ 30s) are run twice;
+  run-to-run differences are recorded as `stable` / `varies between runs` in
+  the evidence and scorecard.
+
+- **Verifier pass.** After the per-figure subagents finish, one verifier
+  subagent cross-examines every PARTIAL/FAILED verdict against its evidence,
+  may request one bounded re-run, and can overturn a verdict. The scorecard
+  and any published issue reflect post-verification verdicts.
+
+- **Richer scorecard.** Adds Env (ok / installed N / missing M) and Stability
+  (stable / varies / not checked) columns plus a verifier summary line.
+
 ---
 
 ## What is TrueForge?

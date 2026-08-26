@@ -146,3 +146,35 @@ Net effect: Retrohost is not a wrapper around a model prompt. Nine harness
 features do load-bearing work: MCP tools, sandbox execution, Code Mode,
 subagent fan-out, Generative UI scorecards, clarifying questions, the
 approval gate, the reproduction-review skill, and session persistence.
+
+## Environment-aware reproduction
+
+Retrohost makes reproduction environment-aware and self-verifying. It
+fixes the single biggest weakness seen in initial validation: a figure classified
+FAILED purely because a dependency (matplotlib) was missing in the sandbox.
+The agent now installs the missing dependency (honoring declared version
+constraints) and re-probes before any dependency-failure verdict.
+
+Capabilities:
+
+- **Environment-aware reproduction.** Before declaring any figure FAILED for
+  a missing dependency, the agent scans the script's imports (including
+  function-level and transitive local-module imports via AST), reads declared
+  dependencies (requirements.txt / environment.yml / Pipfile), installs what's
+  missing within a bounded 120-second budget, and re-probes. A dependency
+  failure is only reported after a documented install attempt.
+
+- **Stability checks.** Fast scripts (first run ≤ 30s) are run twice;
+  run-to-run differences are recorded as `stable` / `varies between runs` in
+  the evidence and scorecard.
+
+- **Verifier pass.** After the per-figure subagents finish, one verifier
+  subagent cross-examines every PARTIAL/FAILED verdict against its evidence,
+  may request one bounded re-run, and can overturn a verdict. The scorecard
+  and any published issue reflect post-verification verdicts.
+
+- **Richer scorecard.** Adds Env (ok / installed N / missing M) and Stability
+  (stable / varies / not checked) columns plus a verifier summary line.
+
+The environment-aware upgrade landed via PR #13, Qodo-reviewed (4 findings raised and fixed before
+merge).
