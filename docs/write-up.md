@@ -99,3 +99,22 @@ reproducibility study of ML papers in security conferences,
 - `examples/reproducible-paper/` and `examples/divergent-paper/` — seeded test
   fixtures (one reproduces, one has a stale committed result).
 - `docs/demo-script.md` — the ~3-minute demo.
+
+## Qodo Review Trail
+
+For the Best Code Quality track, all post-scaffold work flowed through
+Qodo-reviewed pull requests. Every PR was real, reviewable work; Qodo's
+findings were addressed before merge. No review trail was fabricated.
+
+| PR | Work | Qodo findings | Outcome |
+|----|------|---------------|---------|
+| #2 | CI workflow + requirements.txt | 2 (lockfile/manifest mismatch, MCP session leak) | Fixed, re-reviewed clean, merged |
+| #3 | pytest suite (25 tests) | 3 (tolerance-policy bypass, session leak, lockfile) | Fixed, re-reviewed clean, merged |
+| #4 | CONTRIBUTING.md | 0 | Merged |
+| #5 | README overhaul | 0 | Merged |
+| #6 | `--json` output mode | 0 | Merged |
+| #7 | Makefile | 2 (clean-checkout test failure, python/python3) | Fixed, re-reviewed clean, merged |
+
+6 PRs merged, 7 Qodo findings, all addressed with follow-up commits and
+re-reviewed clean. The trail is visible at
+https://github.com/SameerGoyal125/agentic-ai/pulls.
