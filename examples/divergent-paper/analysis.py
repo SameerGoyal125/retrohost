@@ -11,7 +11,9 @@ produces a table that differs from the claimed result — a realistic
 stale-artifact reproducibility failure.
 """
 import csv
+import json
 import os
+import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 INPUT = os.path.join(HERE, "data", "input.csv")
@@ -62,9 +64,13 @@ def write_figure(means, path):
 def main():
     rows, columns = read_input(INPUT)
     means = column_means(rows, columns)
-    write_table(means, OUTPUT)
-    write_figure(means, FIGURE)
-    print("wrote", OUTPUT)
+    if "--json" in sys.argv:
+        out = {f"mean_{col}": means[col] for col in columns}
+        print(json.dumps(out))
+    else:
+        write_table(means, OUTPUT)
+        write_figure(means, FIGURE)
+        print("wrote", OUTPUT)
 
 
 if __name__ == "__main__":
