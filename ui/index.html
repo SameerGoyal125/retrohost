@@ -610,17 +610,35 @@
     $("deduction-list").innerHTML = '<p class="empty">Reading the case files…</p>';
     $("verdict-box").innerHTML = '<div class="verdict-box"><div class="verdict-stamp none">Investigating…</div></div>';
 
-    fetchJSON(API + "/sessions/" + encodeURIComponent(id) + "/events?limit=50")
-      .then(function (data) {
-        var events = (data && data.data) || [];
+    fetchAllEvents(id)
+      .then(function (events) {
+        if (id !== currentId) return; /* stale response — a newer case is open */
         renderCase(events);
       })
       .catch(function () {
+        if (id !== currentId) return;
         setState("idle");
         showBanner("The detective can't reach the case files for this session. The API may be down or CORS-restricted.");
         $("evidence-list").innerHTML = '<p class="empty">Case files unreachable.</p>';
         $("deduction-list").innerHTML = '<p class="empty">Case files unreachable.</p>';
       });
+  }
+
+  /* follow pagination until every event is collected, in order */
+  function fetchAllEvents(id) {
+    var all = [];
+    var pageToken = null;
+    function page() {
+      var url = API + "/sessions/" + encodeURIComponent(id) + "/events?limit=50";
+      if (pageToken) url += "&page_token=" + encodeURIComponent(pageToken);
+      return fetchJSON(url).then(function (data) {
+        var events = (data && data.data) || [];
+        all = all.concat(events);
+        pageToken = (data && data.pagination && data.pagination.next_page_token) || null;
+        return pageToken ? page() : all;
+      });
+    }
+    return page();
   }
 
   function evText(ev) {
@@ -639,49 +657,73 @@
   function renderCase(events) {
     var evidence = [];
     var deductions = [];
-    var verdicts = { REPRODUCED: 0, PARTIAL: 0, FAILED: 0 };
     var sawSubagents = false;
-    var sawClassification = false;
+    var finalVerdict = null;   /* { label, counts } from the last scorecard */
+    var lastScorecard = null;  /* last model message that looks like a final summary */
 
     events.forEach(function (entry) {
       var ev = (entry && entry.event) || entry || {};
       var text = evText(ev);
       var tcs = ev.tool_calls || [];
 
-      /* tool calls → evidence */
-      tcs.forEach(function (tc) {
-        var fn = (tc.function && tc.function.name) || tc.name || "tool";
+      /* tool calls → evidence (both inline tool_calls and standalone tool.call/tool.response events) */
+      var toolEvents = [];
+      if (ev.type === "tool.call" || ev.type === "tool.response") {
+        toolEvents.push(ev);
+      }
+      tcs.forEach(function (tc) { toolEvents.push({ tool_call: tc }); });
+
+      toolEvents.forEach(function (te) {
+        var tc = te.tool_call || te;
+        var fn = (tc.function && tc.function.name) || tc.name || te.name || "tool";
         var args = "";
-        try {
-          var raw = (tc.function && tc.function.arguments) || tc.arguments || "";
-          if (typeof raw === "string" && raw) {
-            var parsed = JSON.parse(raw);
-            args = JSON.stringify(parsed, null, 1).slice(0, 300);
-          } else if (raw) {
-            args = JSON.stringify(raw).slice(0, 300);
-          }
-        } catch (e) { args = String(raw || "").slice(0, 300); }
+        var raw = (tc.function && tc.function.arguments) || tc.arguments || te.arguments || "";
+        if (typeof raw === "string" && raw) {
+          try {
+            args = JSON.stringify(JSON.parse(raw), null, 1).slice(0, 300);
+          } catch (e) { args = raw.slice(0, 300); }
+        } else if (raw) {
+          args = JSON.stringify(raw).slice(0, 300);
+        }
         evidence.push({ tool: fn, args: args });
         if (/create_sub_agent|sub_agent|sandbox|run_code|execute/i.test(fn)) sawSubagents = true;
       });
 
       /* model messages → deduction */
-      if (ev.type === "model" || ev.type === "message" || (text && !tcs.length)) {
+      if (ev.type === "model" || ev.type === "message" || (text && !tcs.length && ev.type !== "tool.call" && ev.type !== "tool.response")) {
         var clean = text.trim();
         if (clean) deductions.push({ role: ev.role || "agent", text: clean.slice(0, 600) });
       }
 
-      /* classification scan */
-      var up = text.toUpperCase();
-      ["REPRODUCED", "PARTIAL", "FAILED"].forEach(function (k) {
-        var re = new RegExp("\\b" + k + "\\b", "g");
-        var n = (up.match(re) || []).length;
-        if (n > 0) {
-          verdicts[k] += n;
-          sawClassification = true;
+      /* final verdict: the LAST model message containing a scorecard/aggregate summary */
+      if (ev.type === "model" || ev.type === "message") {
+        var up = text.toUpperCase();
+        var hasRep = /\bREPRODUCED\b/.test(up);
+        var hasPar = /\bPARTIAL\b/.test(up);
+        var hasFai = /\bFAILED\b/.test(up);
+        if (hasRep && (hasPar || hasFai)) {
+          /* looks like a scorecard — pull the count next to each label */
+          var counts = { REPRODUCED: 0, PARTIAL: 0, FAILED: 0 };
+          ["REPRODUCED", "PARTIAL", "FAILED"].forEach(function (l) {
+            var m = up.match(new RegExp("(\\d+)\\s+" + l + "\\b")) ||
+                    up.match(new RegExp(l + "\\b[^\\d]{0,6}(\\d+)"));
+            if (m) counts[l] = parseInt(m[1], 10);
+          });
+          lastScorecard = { counts: counts, text: clean };
         }
-      });
+      }
     });
+
+    /* derive the final verdict from the last scorecard found */
+    if (lastScorecard) {
+      var c = lastScorecard.counts;
+      var total = c.REPRODUCED + c.PARTIAL + c.FAILED;
+      if (total > 0) {
+        var dominant = c.REPRODUCED >= c.PARTIAL && c.REPRODUCED >= c.FAILED
+          ? "REPRODUCED" : (c.PARTIAL >= c.FAILED ? "PARTIAL" : "FAILED");
+        finalVerdict = { label: dominant, counts: c, total: total };
+      }
+    }
 
     /* ---- evidence panel ---- */
     var evEl = $("evidence-list");
@@ -728,30 +770,27 @@
     }
 
     /* ---- verdict panel ---- */
-    var total = verdicts.REPRODUCED + verdicts.PARTIAL + verdicts.FAILED;
     var vb = $("verdict-box");
     vb.innerHTML = "";
     var box = document.createElement("div");
     box.className = "verdict-box";
 
     var stamp = document.createElement("div");
-    if (total === 0) {
+    if (!finalVerdict) {
       stamp.className = "verdict-stamp none";
       stamp.textContent = sawSubagents ? "In progress" : "No verdict yet";
     } else {
-      var dominant = verdicts.REPRODUCED >= verdicts.PARTIAL && verdicts.REPRODUCED >= verdicts.FAILED
-        ? "REPRODUCED" : (verdicts.PARTIAL >= verdicts.FAILED ? "PARTIAL" : "FAILED");
-      stamp.className = "verdict-stamp " + dominant.toLowerCase();
-      stamp.textContent = dominant;
+      stamp.className = "verdict-stamp " + finalVerdict.label.toLowerCase();
+      stamp.textContent = finalVerdict.label;
     }
     box.appendChild(stamp);
 
-    if (total > 0) {
+    if (finalVerdict) {
       var counts = document.createElement("div");
       counts.className = "verdict-counts";
-      [["REPRODUCED", "ok", verdicts.REPRODUCED],
-       ["PARTIAL", "warn", verdicts.PARTIAL],
-       ["FAILED", "bad", verdicts.FAILED]].forEach(function (c) {
+      [["REPRODUCED", "ok", finalVerdict.counts.REPRODUCED],
+       ["PARTIAL", "warn", finalVerdict.counts.PARTIAL],
+       ["FAILED", "bad", finalVerdict.counts.FAILED]].forEach(function (c) {
         var s = document.createElement("span");
         s.className = "vc " + c[1];
         s.textContent = c[0] + " " + c[2];
@@ -761,14 +800,14 @@
     }
     var note = document.createElement("p");
     note.className = "verdict-note";
-    note.textContent = total > 0
-      ? "Classification read from the agent's own report — " + total + " verdict(s) found."
-      : "The agent has not reported a classification yet.";
+    note.textContent = finalVerdict
+      ? "Final scorecard read from the agent's report — " + finalVerdict.total + " verdict(s)."
+      : "The agent has not reported a final scorecard yet.";
     box.appendChild(note);
     vb.appendChild(box);
 
     /* ---- mascot state ---- */
-    if (sawClassification) setState("verdict");
+    if (finalVerdict) setState("verdict");
     else if (sawSubagents) setState("investigating");
     else if (evidence.length || deductions.length) setState("evidence");
     else setState("idle");
