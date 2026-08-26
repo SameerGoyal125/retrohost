@@ -114,8 +114,11 @@ findings were addressed before merge. No review trail was fabricated.
 | #5 | README overhaul | 0 | Merged |
 | #6 | `--json` output mode | 0 | Merged |
 | #7 | Makefile | 2 (clean-checkout test failure, python/python3) | Fixed, re-reviewed clean, merged |
+| #8 | .gitignore + untrack .pyc artifacts | 0 | Merged |
+| #9 | MIT license | 0 | Merged |
+| #10 | Harness-criteria evidence section in write-up | 0 | Merged |
 
-6 PRs merged, 7 Qodo findings, all addressed with follow-up commits and
+9 PRs merged, 7 Qodo findings, all addressed with follow-up commits and
 re-reviewed clean. The trail is visible at
 https://github.com/SameerGoyal125/retrohost/pulls.
 
