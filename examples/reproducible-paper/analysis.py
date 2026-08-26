@@ -5,7 +5,9 @@ Writes its actual output to results/table.csv and, if matplotlib is available,
 results/figure.png. The claimed result lives in results/claimed.csv.
 """
 import csv
+import json
 import os
+import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 INPUT = os.path.join(HERE, "data", "input.csv")
@@ -56,9 +58,13 @@ def write_figure(means, path):
 def main():
     rows, columns = read_input(INPUT)
     means = column_means(rows, columns)
-    write_table(means, OUTPUT)
-    write_figure(means, FIGURE)
-    print("wrote", OUTPUT)
+    if "--json" in sys.argv:
+        out = {f"mean_{col}": means[col] for col in columns}
+        print(json.dumps(out))
+    else:
+        write_table(means, OUTPUT)
+        write_figure(means, FIGURE)
+        print("wrote", OUTPUT)
 
 
 if __name__ == "__main__":
