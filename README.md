@@ -279,8 +279,11 @@ Reproduce the figures in SameerGoyal125/retrohost, subpath examples/divergent-pa
 
 The first fixture should come back as REPRODUCED (all three analysis
 rows match the claimed values within numeric tolerance). The second
-should come back as FAILED (the claimed values are stale sums from an
-older version of the code, while the current analysis computes means).
+should come back as NOT REPRODUCED. In the validated run, Table 1
+classified PARTIAL (fresh computed means are 8.5, 9.5, 10.5 while the
+stale claimed sums are 51, 57, 63 -- every value off by exactly 6x)
+and Figure 1 classified FAILED (missing matplotlib dependency in the
+sandbox).
 
 **Real-world result:** Retrohost was run against a published paper,
 `reproducibility-sec/reproducibility` (a reproducibility study of ML
