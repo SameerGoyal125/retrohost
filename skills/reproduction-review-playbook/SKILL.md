@@ -1,6 +1,6 @@
 ---
 name: reproduction-review-playbook
-description: Classify whether a paper figure/table reproduces — REPRODUCED / PARTIAL / FAILED — with evidence, using numeric tolerance and structural equivalence. v2: environment-aware, with stability checks and verifier pass.
+description: Classify whether a paper figure/table reproduces — REPRODUCED / PARTIAL / FAILED — with evidence, using numeric tolerance and structural equivalence. Environment-aware, with stability checks and a verifier pass.
 ---
 
 # Reproduction Review Playbook
