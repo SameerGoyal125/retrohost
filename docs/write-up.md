@@ -54,7 +54,11 @@ R`). It does not reproduce papers without public code or data.
   "undeletable."
 - The Ox Alpha model on the Zen endpoint failed on tool calls (a documented
   upstream bug), so we switched to `stealth/ox-alpha` on the Nous Research
-  endpoint, which handles tools correctly.
+  endpoint, which handles tools correctly. The Zen endpoint later became
+  unusable for a different reason — its shared `public` key resolves to a
+  rate-limited free pool that returns HTTP 429 before the first token — so
+  the shipped config pins `ollama-cloud/deepseek-v4-flash`, which is what
+  `agent.json` and the README now document.
 
 ## Validated end-to-end
 

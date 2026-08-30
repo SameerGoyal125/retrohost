@@ -99,7 +99,7 @@ each one, what it is, and where to get it.
 |------|----------------------|-----------------|
 | **GitHub account + Personal Access Token** | Reads the paper's repo (file structure, code, data) and posts the reproduction report as an issue. The token needs fine-grained permissions: repo read + issues write on the target repositories. | Create a token at [github.com/settings/tokens](https://github.com/settings/tokens). Choose "Fine-grained token", set repository access to the repos you'll reproduce, and enable "Contents: Read" and "Issues: Read and write" permissions. |
 | **Daytona account + API key** | Provides the isolated sandbox where the paper's code actually runs. The code is untrusted, so it runs in a disposable cloud environment that never has your credentials. The API key needs: write snapshots, delete snapshots, write sandboxes. | Sign up and get your key at [app.daytona.io](https://app.daytona.io). |
-| **Model API key** | Powers the AI agent itself. Any OpenAI-compatible provider works (OpenAI, Anthropic, Gemini, DeepSeek, or a self-hosted model). The validated setup used `nous/ox-alpha` through the Nous Research endpoint. | Depends on your provider. For Nous Research: [nousresearch.com](https://nousresearch.com). For OpenAI: [platform.openai.com](https://platform.openai.com). |
+| **Model API key** | Powers the AI agent itself. Any OpenAI-compatible provider works (OpenAI, Anthropic, Gemini, DeepSeek, or a self-hosted model). The validated setup used `deepseek-v4-flash` via Ollama Cloud (`https://ollama.com/v1`). | Depends on your provider. For Ollama Cloud: [ollama.com](https://ollama.com). For OpenAI: [platform.openai.com](https://platform.openai.com). |
 
 > **Important:** Store all three keys in TrueForge Settings (described
 > below). Never put them in this repo, in any file, or in a chat message.
@@ -197,9 +197,17 @@ You should see the TrueForge dashboard.
    OpenAI, Anthropic, Gemini, DeepSeek, Nous Research, or any provider
    that speaks the OpenAI API format).
 4. Paste your API key.
-5. Set the model name. The validated setup used `nous/ox-alpha`. If you
-   are using OpenAI directly, use `gpt-4o`. Check your provider's
+5. Set the model name. The validated setup used `deepseek-v4-flash` on a
+   provider named `ollama-cloud` (base URL `https://ollama.com/v1`). If
+   you are using OpenAI directly, use `gpt-4o`. Check your provider's
    documentation for the correct model name.
+
+> **The provider name must match `agent.json`.** That file pins
+> `"model": { "name": "ollama-cloud/deepseek-v4-flash" }` — the part
+> before the slash is the **provider name you type in TrueForge**, and the
+> part after it is the model. If you name your provider something else, or
+> use a different model, edit `agent.json` to match before importing the
+> agent, or TrueForge cannot resolve the model.
 
 ### Step 6: Connect the sandbox
 
