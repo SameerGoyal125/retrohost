@@ -433,6 +433,41 @@
 
   .verdict-note { font-size: .85rem; color: var(--ink-soft); }
 
+  /* approval gate — human-in-the-loop question from ask_user_question */
+  .approval {
+    margin-top: 18px;
+    padding: 16px 14px;
+    border: 1px solid rgba(201,162,39,.45);
+    border-radius: 12px;
+    background: rgba(201,162,39,.07);
+    text-align: left;
+  }
+  .approval-q {
+    font-size: .9rem;
+    font-weight: 700;
+    color: var(--ink);
+    margin: 0 0 12px;
+    line-height: 1.45;
+  }
+  .approval-opts { display: flex; flex-wrap: wrap; gap: 8px; }
+  .approval-btn {
+    font-family: inherit;
+    font-size: .82rem;
+    font-weight: 700;
+    letter-spacing: .02em;
+    color: #1a1408;
+    background: linear-gradient(180deg, #e8c95c, #c9a227);
+    border: none;
+    border-radius: 999px;
+    padding: 8px 16px;
+    cursor: pointer;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 6px 14px -8px rgba(201,162,39,.55);
+    transition: transform .3s var(--ease), filter .3s var(--ease);
+  }
+  .approval-btn:hover { filter: brightness(1.06); transform: translateY(-1px); }
+  .approval-btn:active { transform: scale(.97); }
+  .approval-btn:disabled { opacity: .55; cursor: wait; }
+
   /* ============ History ============ */
   .history {
     background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.015));
@@ -851,16 +886,49 @@
     var lastScorecard = null;  /* last model message that looks like a final summary */
     var turnStatus = null;     /* "completed" | "error" | null (still running) */
     var turnError = null;      /* message from a failed turn */
+    var pendingQuestions = []; /* { toolCallId, question, options } from ask_user_question */
+
+    /* pre-pass: collect ask_user_question tool calls (question/options live in the model.message
+       tool call, NOT in the tool.response_required refs) — keyed by tool call id */
+    var askCalls = {};
+    events.forEach(function (entry) {
+      var ev = (entry && entry.event) || entry || {};
+      (ev.tool_calls || []).forEach(function (tc) {
+        var id = tc.id || tc.tool_call_id;
+        var fn = (tc.function && tc.function.name) || tc.name || "";
+        if (!id || fn !== "ask_user_question") return;
+        var raw = (tc.function && tc.function.arguments) || tc.arguments || "";
+        var parsed = null;
+        if (typeof raw === "string" && raw) {
+          try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
+        } else if (raw) { parsed = raw; }
+        if (parsed && parsed.question && Array.isArray(parsed.options)) {
+          askCalls[id] = { question: parsed.question, options: parsed.options };
+        }
+      });
+    });
 
     events.forEach(function (entry) {
       var ev = (entry && entry.event) || entry || {};
       var text = evText(ev);
       var tcs = ev.tool_calls || [];
 
-      /* track turn lifecycle: a failed turn must be surfaced, not silently ignored */
+      /* track turn lifecycle: a failed turn must be surfaced, not silently ignored.
+         state.status is "done" (success) or "error" (failure). */
       if (ev.type === "turn.done" && ev.state) {
-        turnStatus = ev.state.status || "completed";
+        turnStatus = ev.state.status || "done";
         if (turnStatus === "error") turnError = ev.state.message || "The turn failed.";
+      }
+
+      /* human-in-the-loop: a paused turn waiting for an answer to ask_user_question.
+         The refs here carry no question/options — look them up from the model.message tool call. */
+      if (ev.type === "tool.response_required") {
+        (ev.tool_calls || []).forEach(function (tc) {
+          var id = tc.id || tc.tool_call_id;
+          if (!id) return;
+          var info = askCalls[id];
+          if (info) pendingQuestions.push({ toolCallId: id, question: info.question, options: info.options });
+        });
       }
 
       /* tool calls → evidence (both inline tool_calls and standalone tool.call/tool.response events) */
@@ -896,19 +964,21 @@
       if (text && ev.type !== "tool.call" && ev.type !== "tool.response") {
         var up = text.toUpperCase();
         var clean = text.trim();
+        /* strip Generative-UI tool-instruction blocks — they're noise, not the scorecard */
+        var upProse = up.replace(/```openui[\s\S]*?```/gi, "");
         var hasRep = /\bREPRODUCED\b/.test(up);
         var hasPar = /\bPARTIAL\b/.test(up);
         var hasFai = /\bFAILED\b/.test(up);
         if (hasRep || hasPar || hasFai) {
-          /* looks like a scorecard — pull the count next to each label */
+          /* looks like a scorecard — pull the count next to each label (prose only) */
           var counts = { REPRODUCED: 0, PARTIAL: 0, FAILED: 0 };
           ["REPRODUCED", "PARTIAL", "FAILED"].forEach(function (l) {
-            var m = up.match(new RegExp("(\\d+)\\s+" + l + "\\b")) ||
-                    up.match(new RegExp(l + "\\b[^\\d]{0,6}(\\d+)"));
+            var m = upProse.match(new RegExp("(\\d+)\\s+" + l + "\\b")) ||
+                    upProse.match(new RegExp(l + "\\b[^\\d]{0,6}(\\d+)"));
             if (m) counts[l] = parseInt(m[1], 10);
             else {
               /* fallback: count label occurrences, excluding negated ones ("not REPRODUCED") */
-              var stripped = up.replace(new RegExp("\\bNOT[\\s-]+" + l + "\\b", "gi"), "");
+              var stripped = upProse.replace(new RegExp("\\bNOT[\\s-]+" + l + "\\b", "gi"), "");
               counts[l] = (stripped.match(new RegExp("\\b" + l + "\\b", "g")) || []).length;
             }
           });
@@ -918,8 +988,9 @@
       }
     });
 
-    /* derive the final verdict from the last scorecard found */
-    if (lastScorecard) {
+    /* derive the final verdict from the last scorecard found — ONLY once the turn is done,
+       so intermediate per-figure messages can't flip the verdict mid-run */
+    if ((turnStatus === "done" || turnStatus === "completed") && lastScorecard) {
       var c = lastScorecard.counts;
       var total = c.REPRODUCED + c.PARTIAL + c.FAILED;
       if (total > 0) {
@@ -986,7 +1057,7 @@
       stamp.textContent = "Turn failed";
     } else if (!finalVerdict) {
       stamp.className = "verdict-stamp none";
-      stamp.textContent = sawSubagents ? "In progress" : "No verdict yet";
+      stamp.textContent = (turnStatus === "done" || turnStatus === "completed") ? "No verdict yet" : "In progress";
     } else {
       stamp.className = "verdict-stamp " + finalVerdict.label.toLowerCase();
       stamp.textContent = finalVerdict.label;
@@ -1015,8 +1086,34 @@
     note.className = "verdict-note";
     note.textContent = finalVerdict
       ? "Final scorecard read from the agent's report — " + finalVerdict.total + " verdict(s)."
-      : "The agent has not reported a final scorecard yet.";
+      : (turnStatus === "completed" ? "The agent has not reported a final scorecard yet."
+                                    : "The investigation is still running — the verdict will appear when it completes.");
     box.appendChild(note);
+
+    /* ---- approval gate: answer the agent's ask_user_question ---- */
+    pendingQuestions.forEach(function (pq) {
+      var ap = document.createElement("div");
+      ap.className = "approval";
+      var q = document.createElement("p");
+      q.className = "approval-q";
+      q.textContent = pq.question;
+      ap.appendChild(q);
+      var opts = document.createElement("div");
+      opts.className = "approval-opts";
+      pq.options.forEach(function (opt) {
+        var b = document.createElement("button");
+        b.className = "approval-btn";
+        b.textContent = opt;
+        b.addEventListener("click", function () {
+          b.disabled = true;
+          answerQuestion(pq.toolCallId, opt, b);
+        });
+        opts.appendChild(b);
+      });
+      ap.appendChild(opts);
+      box.appendChild(ap);
+    });
+
     vb.appendChild(box);
 
     /* ---- mascot state ---- */
@@ -1026,6 +1123,39 @@
     else if (evidence.length || deductions.length) setState("evidence");
     else if (turnStatus === "completed") setState("idle");
     else setState("investigating"); /* case open, turn still running — don't flip to idle */
+  }
+
+  /* answer a paused ask_user_question — resumes the turn in TrueForge */
+  function answerQuestion(toolCallId, option, btn) {
+    if (!currentId) return;
+    fetch(API + "/sessions/" + encodeURIComponent(currentId) + "/turns", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        input: [{ type: "user.tool_response", thread_id: "main", tool_call_id: toolCallId, content: option }],
+        previous_turn_id: "auto"
+      })
+    })
+      .then(function (res) {
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        if (!res.body || !res.body.getReader) return;
+        var reader = res.body.getReader();
+        function pump() {
+          return reader.read().then(function (r) { return r.done ? null : pump(); });
+        }
+        return pump();
+      })
+      .then(function () {
+        /* refresh so the agent's continuation (e.g. "issue posted") appears */
+        return fetchAllEvents(currentId).then(function (events) {
+          if (!currentId) return;
+          renderCase(events);
+        });
+      })
+      .catch(function (err) {
+        if (btn) btn.disabled = false;
+        showBanner("Couldn't send your answer: <b>" + escapeHtml(String(err.message || err)) + "</b>. Try again.");
+      });
   }
 
   /* ---------- new case ---------- */
@@ -1097,10 +1227,11 @@
   setInterval(loadSessions, 15000);
   /* live-update the open case: re-fetch its events every 5s while one is open */
   setInterval(function () {
-    if (!currentId) return;
-    fetchAllEvents(currentId)
+    var id = currentId;
+    if (!id) return;
+    fetchAllEvents(id)
       .then(function (events) {
-        if (!currentId) return;
+        if (id !== currentId) return; /* stale response — a newer case is open */
         renderCase(events);
       })
       .catch(function () { /* transient — the next tick will retry */ });
